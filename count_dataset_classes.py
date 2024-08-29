@@ -1,5 +1,6 @@
 import os
 import matplotlib.pyplot as plt
+import matplotlib.pyplot as plt
 
 def read_txt_files(folder_path):
     class_counts = {}
@@ -24,22 +25,34 @@ def read_txt_files(folder_path):
     print(f"Total number of annotations: {counter}")
     return class_counts
 
-def plot_bar_chart(class_counts, save_path: str = "plot.png"):
-    categories = list(class_counts.keys())
-    counts = list(class_counts.values())
+def plot_bar_chart(
+    class_counts, 
+    class_mapping: dict, 
+    plot_title: str = "Class Counts", 
+    save_path: str = "plot.png"
+):
+    # Sort categories and counts by the key (integer label)
+    sorted_categories = sorted(class_counts.keys())
+    sorted_counts = [class_counts[category] for category in sorted_categories]
+
+    # Map sorted integer labels to class names
+    sorted_class_names = [class_mapping[category] for category in sorted_categories]
+
+    # Generate a color map with as many colors as there are categories
+    colormap = plt.get_cmap('hsv', len(sorted_categories)+1)
+    colors = colormap(range(len(sorted_categories)))
 
     plt.figure(figsize=(10, 6))
-    plt.bar(categories, counts, color='skyblue')
+    plt.bar(sorted_class_names, sorted_counts, color=colors)
     plt.xlabel('Category')
     plt.ylabel('Count')
-    plt.title('Class Counts')
+    plt.title(plot_title)
     plt.xticks(rotation=45)
-    plt.ylim(0, 2000)
+    plt.ylim(0, max(sorted_counts) + 200 if max(sorted_counts) > 2000 else 2000)
     plt.tight_layout()
-    # plt.show()
 
-    # dave_path = os.path.join(save_path, relative_path)
     plt.savefig(save_path)
+    plt.close()  # Close the plot to free up memory
 
 def main(split: str = "full"):
     SPLIT = split
@@ -57,9 +70,17 @@ def main(split: str = "full"):
 
     class_counts = read_txt_files(full_path)
     print(class_counts)
+
+    # Class names
+    class_mapping = {0: 'Not recyclable', 1: 'Food waste', 2: 'Glass', 3: 'Textile', 4: 'Metal', 5: 'Wooden', 6: 'Leather', 7: 'Plastic', 8: 'Ceramic', 9: 'Paper'}
     
     save_dir = os.path.join(current_dir, "my_dataset_class_count_" + SPLIT + ".png")
-    plot_bar_chart(class_counts, save_dir)    
+    plot_bar_chart(
+        class_counts, 
+        class_mapping=class_mapping, 
+        plot_title='Number of annotations per class in full dataset' if SPLIT == 'full' else f"Number of annotations per class in {SPLIT} split",
+        save_path=save_dir)    
+    
     return class_counts
 
 if __name__ == "__main__":
