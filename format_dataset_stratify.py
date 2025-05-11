@@ -3,11 +3,20 @@ from typing import Tuple
 import pandas as pd
 import os
 import glob
+import argparse
 
-def generate_csv():
+# https://www.reddit.com/r/computervision/comments/im0rji/how_to_split_custom_dataset_for_training_and/
+
+def generate_csv(dataset_dir: str = "datasets/trash_detection"):
     # Specify the directory containing images and labels
-    image_dir = 'datasets/trash_detection/images'
-    label_dir = 'datasets/trash_detection/labels'
+    image_dir = os.path.join(dataset_dir, 'images')
+    label_dir = os.path.join(dataset_dir, 'labels')
+
+    # Check if the directories exist    
+    if not os.path.exists(image_dir):
+        raise FileNotFoundError(f"Image directory {image_dir} does not exist.")
+    if not os.path.exists(label_dir):
+        raise FileNotFoundError(f"Label directory {label_dir} does not exist.")
 
     # Get all image file paths
     image_paths = glob.glob(os.path.join(image_dir, "*.jpg")) \
@@ -16,6 +25,9 @@ def generate_csv():
 
     # Get all label file paths
     label_paths = glob.glob(os.path.join(label_dir, "*.txt"))
+    print(f"Found {len(label_paths)} label files.")
+    if len(label_paths) == 0:
+        raise FileNotFoundError(f"No label files found in {label_dir}.")
 
     # Create a dictionary to store data
     data = {
@@ -26,6 +38,8 @@ def generate_csv():
 
     # Initialize a set to store class names
     classes_set = set()
+
+    print("Processing label files to produce CSV...")
 
     # Process each label file
     for label_path in label_paths:
@@ -66,6 +80,8 @@ def generate_csv():
     # Create DataFrame from the data dictionary
     df = pd.DataFrame(data)
 
+    print(f"Finished processing dataset. Found {len(df)} images and {len(classes_set)} classes.")
+    print(f"Classes: {sorted(classes_set)}")
     return df
 
     # Save the DataFrame to a CSV file
@@ -81,14 +97,16 @@ def check_stratified_condition(df: pd.DataFrame, desire_set: dict, class_names: 
 
 def stratify_sample(
     # desire_set: Tuple[dict] = None, 
-    # imageid_classname_path: str, 
-    ratios: Tuple[float] = None
+    # image_id_classname_path: str, 
+    ratios: Tuple[float] = None,
+    input_dir: str = "datasets/trash_detection",
+    output_dir: str = "datasets/trash_detection_split"
 ):
     
     train_ratio, val_ratio, test_ratio = ratios
     # desire_train_set, desire_val_set, desire_test_set = desire_set  # goal of stratified splitting
-    # df = pd.read_csv(imageid_classname_path)
-    df = generate_csv()
+    # df = pd.read_csv(image_id_classname_path)
+    df = generate_csv(input_dir)
     # print(df.head())
     df_classes = df.drop(columns=["file_path", "label_path"])
     # print(df_classes.head())
@@ -103,16 +121,16 @@ def stratify_sample(
         desire_val_set[class_name] = int(val_ratio * df_classes[class_name])
         desire_test_set[class_name] = int(test_ratio * df_classes[class_name])
 
-    print(desire_train_set)
-    print(desire_val_set)
-    print(desire_test_set)
+    # print(desire_train_set)
+    # print(desire_val_set)
+    # print(desire_test_set)
     
     tolerance = 5
     class_names = list(desire_train_set.keys())
     condition = 0
     iter_limit = 10000
     iter_count = 0
-    print('\nStarting iterating stratifing sampling...')
+    print('\nStarting iterating stratifying sampling...')
 
     tmp_train_df = None
     tmp_val_df = None
@@ -122,7 +140,7 @@ def stratify_sample(
         iter_count += 1
         _df = df.copy()
         if iter_count == iter_limit:
-            print('Excessing iteration limit... update tolerance')
+            print('Exceeding iteration limit... update tolerance')
             tolerance += 1
         elif iter_count > iter_limit:
             tolerance += 1
@@ -164,9 +182,6 @@ def stratify_sample(
     val_files = list(zip(tmp_val_df['file_path'], tmp_val_df['label_path']))
     test_files = list(zip(tmp_test_df['file_path'], tmp_test_df['label_path']))
 
-    # Split dataset output dir
-    output_dir = 'datasets/trash_detection_split'
-
     # Define YOLO folder structure
     image_dir_out = os.path.join(output_dir, 'images')
     labels_dir_out = os.path.join(output_dir, 'labels')
@@ -193,6 +208,18 @@ def stratify_sample(
 
 if __name__ == "__main__":
     
+    parser = argparse.ArgumentParser(description="Stratify and split dataset for YOLO training.")
+    parser.add_argument("-i", "--input_dir", type=str, required=True, help="Path to the input dataset directory.")
+    parser.add_argument("-o", "--output_dir", type=str, required=True, help="Path to the output directory for the split dataset.")
+    args = parser.parse_args()
+
+    input_dir = os.path.abspath(args.input_dir)
+    output_dir = os.path.abspath(args.output_dir)
+    print(f"Input directory: {input_dir}")
+    print(f"Output directory: {output_dir}")
+
     stratify_sample(
-        ratios=(0.70, 0.15, 0.15)
+        ratios=(0.70, 0.15, 0.15),
+        input_dir=input_dir,
+        output_dir=output_dir
     )
