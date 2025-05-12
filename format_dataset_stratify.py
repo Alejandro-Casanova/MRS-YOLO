@@ -1,3 +1,4 @@
+import json
 import shutil
 from typing import Tuple
 import pandas as pd
@@ -100,7 +101,9 @@ def stratify_sample(
     # image_id_classname_path: str, 
     ratios: Tuple[float] = None,
     input_dir: str = "datasets/trash_detection",
-    output_dir: str = "datasets/trash_detection_split"
+    output_dir: str = "datasets/trash_detection_split",
+    random_seed: int = 42,
+    class_mapping: dict = None  
 ):
     
     train_ratio, val_ratio, test_ratio = ratios
@@ -125,7 +128,7 @@ def stratify_sample(
     # print(desire_val_set)
     # print(desire_test_set)
     
-    tolerance = 5
+    tolerance = 19
     class_names = list(desire_train_set.keys())
     condition = 0
     iter_limit = 10000
@@ -136,46 +139,117 @@ def stratify_sample(
     tmp_val_df = None
     tmp_test_df = None
 
+    max_progress = 0
+
     while condition < len(class_names) * 3:
         iter_count += 1
+        random_state = random_seed + iter_count
         _df = df.copy()
-        if iter_count == iter_limit:
-            print('Exceeding iteration limit... update tolerance')
+
+        # print(f'Iteration: {iter_count -1} / {iter_limit}, condition: {condition}, tolerance: {tolerance}')
+
+        # Plot progress bar
+        num_hashes = 20
+        current_progress = (condition / (len(class_names) * 3)) * 100
+        max_progress = current_progress if current_progress > max_progress else max_progress
+        iteration_progress = (iter_count / iter_limit) * num_hashes    
+        print(f"\rProgress: [{int(iteration_progress) * '#'}{int(num_hashes - iteration_progress) * ' '}] {iteration_progress / num_hashes * 100:.2f}% | Closeness to success: {max_progress:.2f}% ", end='')
+
+        if iter_count >= iter_limit:
+            iter_count = 0
             tolerance += 1
-        elif iter_count > iter_limit:
-            tolerance += 1
-    
+            print('Exceeded iteration limit... updated tolerance to:', tolerance)
+
         condition = 0
         # train set
         tmp_train_df, condition = check_stratified_condition(_df, desire_train_set,
                                                              class_names, condition,
                                                              tolerance, train_ratio,
-                                                             random_state=iter_count)
+                                                             random_state=random_state)
+        
+        if condition < len(class_names):
+            continue # if not satisfied, continue to next iteration
+
         # val set, ratio changed due to train set is taken out
         _tmp_val_df = _df[~_df.index.isin(list(tmp_train_df.index))]
         tmp_val_df, condition = check_stratified_condition(_tmp_val_df, desire_val_set,
                                                            class_names, condition,
                                                            tolerance, val_ratio / (val_ratio + test_ratio),
-                                                           random_state=iter_count)
+                                                           random_state=random_state)
+        
+        if condition < len(class_names) * 2:
+            continue # if not satisfied, continue to next iteration
+
         # test set
         _tmp_test_df = _tmp_val_df[~_tmp_val_df.index.isin(list(tmp_val_df.index))]
         tmp_test_df, condition = check_stratified_condition(_tmp_test_df, desire_test_set,
                                                             class_names, condition,
                                                             tolerance, 1,
-                                                            random_state=iter_count)
+                                                            random_state=random_state)
     print(f'Condition satisfied tolerance: {tolerance}')
 
-    print(tmp_train_df.head())
+    # print(tmp_train_df.head())
+    print("\n")
     print(f"Train images: {len(tmp_train_df.index)}")
     print(f"Val images: {len(tmp_val_df.index)}")
     print(f"Test images: {len(tmp_test_df.index)}")
 
-    print("Instances in train split: ")
-    print(tmp_train_df.drop(columns=["file_path", "label_path"]).sum(axis=0))
-    print("Instances in val split: ")
-    print(tmp_val_df.drop(columns=["file_path", "label_path"]).sum(axis=0))
-    print("Instances in test split: ")
-    print(tmp_test_df.drop(columns=["file_path", "label_path"]).sum(axis=0))
+    train_split_instances = tmp_train_df.drop(columns=["file_path", "label_path"]).sum(axis=0)
+    val_split_instances = tmp_val_df.drop(columns=["file_path", "label_path"]).sum(axis=0)
+    test_split_instances = tmp_test_df.drop(columns=["file_path", "label_path"]).sum(axis=0)
+
+    # print("Instances in train split: ", train_split_instances)
+    # print("Instances in val split: ", val_split_instances)
+    # print("Instances in test split: ", test_split_instances)
+
+    # Calculate split error
+    train_split_error = abs(train_split_instances - pd.Series(desire_train_set))
+    train_split_error /= pd.Series(desire_train_set)
+    val_split_error = abs(val_split_instances - pd.Series(desire_val_set))
+    val_split_error /= pd.Series(desire_val_set)
+    test_split_error = abs(test_split_instances - pd.Series(desire_test_set))
+    test_split_error /= pd.Series(desire_test_set)
+
+    # Create a DataFrame to display split instance numbers and errors
+    error_table = pd.DataFrame({
+        "Metric": ["Train Instances", "Train Error (%)", "Val Instances", "Val Error (%)", "Test Instances", "Test Error (%)"]
+    })
+
+    for class_name in class_names:
+        error_table[class_name] = [
+            int(train_split_instances[class_name]),
+            round(train_split_error[class_name] * 100, 2),
+            int(val_split_instances[class_name]),
+            round(val_split_error[class_name] * 100, 2),
+            int(test_split_instances[class_name]),
+            round(test_split_error[class_name] * 100, 2)
+        ]
+
+    # Add averaged values across splits
+    error_table["Averaged Across Classes"] = error_table.iloc[:, 1:].mean(axis=1)
+
+    # Calculate total average error
+    total_average_error = error_table.loc[
+        error_table["Metric"].isin(["Train Error (%)", "Val Error (%)", "Test Error (%)"]),
+        "Averaged Across Classes"
+    ].mean()
+
+    # Print the error table
+    print("\nError Table (in %):")
+    print(error_table)
+    print(f"\nTotal Average Error: {total_average_error:.2f}%\n")
+
+    # Replace class names with their corresponding labels
+    for i, class_name in enumerate(class_names):
+        if class_name in class_mapping:
+            error_table.rename(columns={class_name: class_mapping[class_name]}, inplace=True)
+            
+    # Save the error table as a LaTeX file
+    latex_file_path = os.path.join(output_dir, "error_table.tex")
+    print("\nSaving Error Table as LaTeX file...")    
+    with open(latex_file_path, "w") as latex_file:
+        latex_file.write(error_table.to_latex(index=False, float_format="%.2f"))
+    print(f"Error Table saved to {latex_file_path}")
     
     # Convert to list of tuples
     train_files = list(zip(tmp_train_df['file_path'], tmp_train_df['label_path']))
@@ -211,6 +285,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Stratify and split dataset for YOLO training.")
     parser.add_argument("-i", "--input_dir", type=str, required=True, help="Path to the input dataset directory.")
     parser.add_argument("-o", "--output_dir", type=str, required=True, help="Path to the output directory for the split dataset.")
+    parser.add_argument("-s", "--random_seed", type=int, default=42, help="Random seed for reproducibility.")
+    
     args = parser.parse_args()
 
     input_dir = os.path.abspath(args.input_dir)
@@ -218,8 +294,23 @@ if __name__ == "__main__":
     print(f"Input directory: {input_dir}")
     print(f"Output directory: {output_dir}")
 
+    # Abort if the output directory already exists
+    if os.path.exists(output_dir):
+        print(f"Error: Output directory '{output_dir}' already exists. Aborting to prevent overwriting.")
+        exit(1)
+    else:
+        os.makedirs(output_dir, exist_ok=True)
+
+    # Get class names from input directory (json file)
+    class_mapping = {}
+    with open(os.path.join(input_dir, 'classes.json'), 'r') as f:
+        class_mapping = json.load(f)
+
+
     stratify_sample(
         ratios=(0.70, 0.15, 0.15),
         input_dir=input_dir,
-        output_dir=output_dir
+        output_dir=output_dir,
+        random_seed=args.random_seed,
+        class_mapping=class_mapping
     )
