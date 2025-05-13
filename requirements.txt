@@ -1,2 +1,3 @@
 pandas
 Jinja2
+matplotlib

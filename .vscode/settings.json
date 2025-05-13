@@ -1,6 +1,13 @@
 {
     "cSpell.words": [
+        "cmap",
+        "figsize",
         "isin",
+        "matplotlib",
+        "xlabel",
+        "xticks",
+        "ylabel",
+        "ylim",
         "yolo"
     ]
 }
