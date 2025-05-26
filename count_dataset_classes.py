@@ -30,7 +30,7 @@ def plot_bar_chart(
     class_counts, 
     class_mapping: dict, 
     plot_title: str = "Número de anotaciones por clase", 
-    save_path: str = "plot.png"
+    save_path: str = "plot.eps"
 ):
     # Sort categories and counts by the key (integer label)
     sorted_categories = sorted(class_counts.keys())
@@ -52,7 +52,7 @@ def plot_bar_chart(
     plt.ylim(0, max(sorted_counts) + 200 if max(sorted_counts) > 2000 else 2000)
     plt.tight_layout()
 
-    plt.savefig(save_path)
+    plt.savefig(save_path, format='eps', dpi=300)
     plt.close()  # Close the plot to free up memory
 
 def main(split: str = "full", dataset_path: str = None) -> dict:
@@ -87,7 +87,7 @@ def main(split: str = "full", dataset_path: str = None) -> dict:
         # Convert class_mapping to a dictionary with integer keys
         class_mapping = {int(k): v for k, v in class_mapping.items()}
     
-    save_dir = os.path.join(dataset_path, "my_dataset_class_count_" + split + ".png")
+    save_dir = os.path.join(dataset_path, "my_dataset_class_count_" + split + ".eps")
     plot_bar_chart(
         class_counts, 
         class_mapping=class_mapping, 
